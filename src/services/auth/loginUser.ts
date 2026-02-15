@@ -2,6 +2,8 @@
 "use server";
 
 import z from "zod";
+import { parse } from "cookie";
+import { cookies } from "next/headers";
 
 const loginValidationZodSchema = z.object({
   email: z.email({ error: "Email is required" }),
@@ -19,6 +21,8 @@ export const loginUser = async (
   _currentState: any,
   formData: any,
 ): Promise<any> => {
+  let accessTokenObj: null | any = null;
+  let refreshTokenObj: null | any = null;
   try {
     const loginData = {
       email: formData.get("email"),
@@ -46,7 +50,49 @@ export const loginUser = async (
       },
     });
 
+    const setCookieHeaders = res.headers.getSetCookie();
+    // console.log(setCookieHeaders);
+    if (setCookieHeaders && setCookieHeaders.length > 0) {
+      setCookieHeaders.forEach((cookie: string) => {
+        // console.log(cookie, "forEach cookie");
+        const parsedCookie = parse(cookie);
+
+        if (parsedCookie.accessToken) {
+          accessTokenObj = parsedCookie;
+        }
+        if (parsedCookie.refreshToken) {
+          refreshTokenObj = parsedCookie;
+        }
+      });
+    } else {
+      throw new Error("No set-cookie header found");
+    }
+
     const data = await res.json();
+
+    if (!accessTokenObj) {
+      throw new Error("Tokens not found in cookie");
+    }
+
+    if (!refreshTokenObj) {
+      throw new Error("Tokens not found in cookie");
+    }
+
+    const cookieStore = await cookies();
+    cookieStore.set("accessToken", accessTokenObj.accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: accessTokenObj.SameSite,
+      path: accessTokenObj.Path || "/",
+      maxAge: parseInt(accessTokenObj["Max-Age"]),
+    });
+    cookieStore.set("refreshToken", refreshTokenObj.refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: refreshTokenObj.SameSite,
+      path: refreshTokenObj.Path || "/",
+      maxAge: parseInt(refreshTokenObj["Max-Age"]),
+    });
     return data;
   } catch (error) {
     console.log(error);
